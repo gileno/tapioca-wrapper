@@ -166,14 +166,11 @@ class TapiocaClientExecutor(TapiocaClient):
     def delete(self, *args, **kwargs):
         return self._make_request('DELETE', *args, **kwargs)
 
-    def response(self):
-        return self._raw_response
-
     def next(self):
         iterator_list = self._api.get_iterator_list(self._data)
         if self._iterator_index >= len(iterator_list):
             new_request_kwargs = self._api.get_iterator_next_request_kwargs(
-                self._request_kwargs, self._data)
+                self._request_kwargs, self._data, self._raw_response)
 
             if new_request_kwargs:
                 cli = TapiocaClientExecutor(self._api.__class__(), api_params=self._api_params)
