@@ -23,12 +23,13 @@ class TapiocaInstantiator(object):
 class TapiocaClient(object):
 
     def __init__(self, api, data=None, request_kwargs=None, api_params={},
-            resource=None, *args, **kwargs):
+            resource=None, raw_response=None, *args, **kwargs):
         self._api = api
         self._data = data
         self._api_params = api_params
         self._request_kwargs = request_kwargs
         self._resource = resource
+        self._raw_response = raw_response
 
     def _get_doc(self):
         resources = copy.copy(self._resource)
@@ -46,24 +47,35 @@ class TapiocaClient(object):
     def __call__(self, *args, **kwargs):
         if kwargs:
             url = self._api.fill_resource_template_url(self._data, kwargs)
-            return TapiocaClientExecutor(self._api.__class__(), data=url, api_params=self._api_params)
+            return TapiocaClientExecutor(
+                self._api.__class__(), data=url, api_params=self._api_params,
+                raw_response=self._raw_response
+            )
 
-        return TapiocaClientExecutor(self._api.__class__(), data=self._data, api_params=self._api_params,
-            resource=self._resource)
+        return TapiocaClientExecutor(
+            self._api.__class__(), data=self._data,
+            api_params=self._api_params, resource=self._resource,
+            raw_response=self._raw_response
+        )
 
 
     def _get_client_from_name(self, name):
         if self._data and \
             ((isinstance(self._data, list) and isinstance(name, int)) or \
                 (hasattr(self._data, '__iter__') and name in self._data)):
-            return TapiocaClient(self._api.__class__(), data=self._data[name], api_params=self._api_params)
+            return TapiocaClient(
+                self._api.__class__(), data=self._data[name],
+                api_params=self._api_params, raw_response=self._raw_response
+            )
 
         resource_mapping = self._api.resource_mapping
         if name in resource_mapping:
             resource = resource_mapping[name]
             url = self._api.api_root + resource['resource']
-            return TapiocaClient(self._api.__class__(), data=url, api_params=self._api_params,
-                                 resource=resource)
+            return TapiocaClient(
+                self._api.__class__(), data=url, api_params=self._api_params,
+                resource=resource, raw_response=self._raw_response
+             )
 
     def __getattr__(self, name):
         ret = self._get_client_from_name(name)
@@ -78,8 +90,11 @@ class TapiocaClient(object):
         return ret
 
     def __iter__(self):
-        return TapiocaClientExecutor(self._api.__class__(),
-            data=self._data, request_kwargs=self._request_kwargs, api_params=self._api_params)
+        return TapiocaClientExecutor(
+            self._api.__class__(), data=self._data,
+            request_kwargs=self._request_kwargs, api_params=self._api_params,
+            raw_response=self._raw_response
+        )
 
     def __dir__(self):
         if self._api and self._data == None:
@@ -105,7 +120,6 @@ class TapiocaClientExecutor(TapiocaClient):
     def __init__(self, api, *args, **kwargs):
         super(TapiocaClientExecutor, self).__init__(api, *args, **kwargs)
         self._iterator_index = 0
-        self._raw_response = None
 
     def __call__(self, *args, **kwargs):
         return object.__call__(*args, **kwargs)
@@ -122,7 +136,7 @@ class TapiocaClientExecutor(TapiocaClient):
     def data(self):
         return self._data
 
-    def _make_request(self, request_method, raw=False, *args, **kwargs):
+    def _make_request(self, request_method, *args, **kwargs):
         request_kwargs = self._api.get_request_kwargs(self._api_params)
 
         if 'params' in request_kwargs:
@@ -133,26 +147,23 @@ class TapiocaClientExecutor(TapiocaClient):
 
         request_kwargs.update(kwargs)
         request_kwargs.update({
-            'data': self._api.prepare_request_params(request_kwargs.get('data')),
+            'data': self._api.prepare_request_params(
+                request_kwargs.get('data')
+            ),
         })
 
         if not 'url' in request_kwargs:
             request_kwargs['url'] = self._data
 
         self._raw_response = requests.request(request_method, **request_kwargs)
-        if not raw:
-            response = self._api.response_to_native(self._raw_response)
-        else:
-            response = self._raw_response
+        response = self._api.response_to_native(self._raw_response)
 
         return TapiocaClient(self._api.__class__(), data=response,
-            request_kwargs=request_kwargs, api_params=self._api_params)
+            request_kwargs=request_kwargs, api_params=self._api_params,
+            raw_response=self._raw_response)
 
     def get(self, *args, **kwargs):
         return self._make_request('GET', *args, **kwargs)
-
-    def raw_get(self, *args, **kwargs):
-        return self._make_request('GET', raw=True, *args, **kwargs)
 
     def post(self, *args, **kwargs):
         return self._make_request('POST', *args, **kwargs)
@@ -173,9 +184,12 @@ class TapiocaClientExecutor(TapiocaClient):
                 self._request_kwargs, self._data, self._raw_response)
 
             if new_request_kwargs:
-                cli = TapiocaClientExecutor(self._api.__class__(), api_params=self._api_params)
+                cli = TapiocaClientExecutor(
+                    self._api.__class__(), api_params=self._api_params
+                )
                 response = cli.get(**new_request_kwargs)
                 self._data = response._data
+                self._raw_response = response._raw_response
                 self._iterator_index = 0
             else:
                 raise StopIteration()
@@ -183,7 +197,10 @@ class TapiocaClientExecutor(TapiocaClient):
         item = iterator_list[self._iterator_index]
         self._iterator_index += 1
 
-        return TapiocaClient(self._api.__class__(), data=item, api_params=self._api_params)
+        return TapiocaClient(
+            self._api.__class__(), data=item, api_params=self._api_params,
+            raw_response=self._raw_response
+        )
 
     def open_docs(self):
         if not self._resource:
@@ -215,5 +232,6 @@ class TapiocaAdapter(object):
     def get_iterator_list(self, response_data):
         raise NotImplementedError()
 
-    def get_iterator_next_request_kwargs(self, iterator_request_kwargs, response_data):
+    def get_iterator_next_request_kwargs(self, iterator_request_kwargs,
+        response_data, raw_response):
         raise NotImplementedError()
