@@ -105,6 +105,7 @@ class TapiocaClientExecutor(TapiocaClient):
     def __init__(self, api, *args, **kwargs):
         super(TapiocaClientExecutor, self).__init__(api, *args, **kwargs)
         self._iterator_index = 0
+        self._raw_response = None
 
     def __call__(self, *args, **kwargs):
         return object.__call__(*args, **kwargs)
@@ -138,9 +139,11 @@ class TapiocaClientExecutor(TapiocaClient):
         if not 'url' in request_kwargs:
             request_kwargs['url'] = self._data
 
-        response = requests.request(request_method, **request_kwargs)
+        self._raw_response = requests.request(request_method, **request_kwargs)
         if not raw:
-            response = self._api.response_to_native(response)
+            response = self._api.response_to_native(self._raw_response)
+        else:
+            response = self._raw_response
 
         return TapiocaClient(self._api.__class__(), data=response,
             request_kwargs=request_kwargs, api_params=self._api_params)
@@ -162,6 +165,9 @@ class TapiocaClientExecutor(TapiocaClient):
 
     def delete(self, *args, **kwargs):
         return self._make_request('DELETE', *args, **kwargs)
+
+    def response(self):
+        return self._raw_response
 
     def next(self):
         iterator_list = self._api.get_iterator_list(self._data)
@@ -214,4 +220,3 @@ class TapiocaAdapter(object):
 
     def get_iterator_next_request_kwargs(self, iterator_request_kwargs, response_data):
         raise NotImplementedError()
-
